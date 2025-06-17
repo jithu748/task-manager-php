@@ -73,7 +73,7 @@ class EmailService {
         $headers .= "Content-type:text/html;charset=UTF-8" . "\r\n";
         $headers .= "From: Task Manager <noreply@taskmanager.com>" . "\r\n";
 
-        // Send to both old and new email addresses
+        Send to both old and new email addresses
         mail($old_email, $subject, $message, $headers);
         return mail($new_email, $subject, $message, $headers);
     }

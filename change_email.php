@@ -1,11 +1,59 @@
 <?php
 session_start();
 require_once 'includes/db.php';
+require_once 'includes/logger.php';
+require_once 'includes/email_service.php';
 
 // Redirect if not logged in
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit();
+}
+
+$error = '';
+$success = '';
+
+// Process form submission
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    $new_email = filter_input(INPUT_POST, 'new_email', FILTER_SANITIZE_EMAIL);
+    $password = $_POST['password'];
+    
+    if (!filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
+        $error = "Invalid email format";
+    } else {
+        // Verify password and update email
+        $stmt = $conn->prepare("SELECT password FROM users WHERE id = ?");
+        $stmt->bind_param("i", $_SESSION['user_id']);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $user = $result->fetch_assoc();
+        
+        if ($user && password_verify($password, $user['password'])) {
+            // Check if new email already exists
+            $stmt = $conn->prepare("SELECT id FROM users WHERE email = ? AND id != ?");
+            $stmt->bind_param("si", $new_email, $_SESSION['user_id']);
+            $stmt->execute();
+            
+            if ($stmt->get_result()->num_rows > 0) {
+                $error = "Email already in use";
+            } else {
+                // Update email
+                $stmt = $conn->prepare("UPDATE users SET email = ? WHERE id = ?");
+                $stmt->bind_param("si", $new_email, $_SESSION['user_id']);
+                
+                if ($stmt->execute()) {
+                    $success = "Email updated successfully";
+                    Logger::log("User {$_SESSION['username']} changed their email", "INFO");
+                } else {
+                    $error = "Error updating email";
+                    Logger::log("Failed to update email for user {$_SESSION['username']}", "ERROR");
+                }
+            }
+        } else {
+            $error = "Invalid password";
+            Logger::log("Failed email change attempt for user {$_SESSION['username']}", "WARNING");
+        }
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -18,31 +66,21 @@ if (!isset($_SESSION['user_id'])) {
     <div class="container">
         <h1>📧 Change Email</h1>
         
-        <?php if (isset($_SESSION['email_message'])): ?>
-            <div class="alert <?php echo strpos($_SESSION['email_message'], '✅') !== false ? 'success' : 'error'; ?>">
-                <?php 
-                    echo $_SESSION['email_message'];
-                    unset($_SESSION['email_message']);
-                ?>
-            </div>
+        <?php if ($error): ?>
+            <div class="error"><?php echo htmlspecialchars($error); ?></div>
+        <?php endif; ?>
+        <?php if ($success): ?>
+            <div class="success"><?php echo htmlspecialchars($success); ?></div>
         <?php endif; ?>
 
-        <form action="process_change_email.php" method="POST" class="email-form">
-            <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
-            
-            <div class="form-group">
-                <label for="current_password">Current Password:</label>
-                <input type="password" id="current_password" name="current_password" required>
-            </div>
-
+        <form method="POST" action="">
             <div class="form-group">
                 <label for="new_email">New Email:</label>
                 <input type="email" id="new_email" name="new_email" required>
             </div>
-
             <div class="form-group">
-                <label for="confirm_email">Confirm New Email:</label>
-                <input type="email" id="confirm_email" name="confirm_email" required>
+                <label for="password">Confirm Password:</label>
+                <input type="password" id="password" name="password" required>
             </div>
 
             <button type="submit">Change Email</button>

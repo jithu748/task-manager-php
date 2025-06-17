@@ -1,12 +1,58 @@
 <?php
 session_start();
 require_once 'includes/db.php';
+require_once 'includes/logger.php';
 require_once 'includes/password_policy.php';
 
 // Redirect if not logged in
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit();
+}
+
+$error = '';
+$success = '';
+
+// Process form submission
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    $current_password = $_POST['current_password'];
+    $new_password = $_POST['new_password'];
+    $confirm_password = $_POST['confirm_password'];
+    
+    // Verify passwords match
+    if ($new_password !== $confirm_password) {
+        $error = "New passwords do not match";
+    } 
+    // Validate password strength
+    elseif (!isPasswordStrong($new_password)) {
+        $error = "Password must be at least 8 characters long and contain uppercase, lowercase, numbers, and special characters";
+    } 
+    else {
+        // Verify current password
+        $stmt = $conn->prepare("SELECT password FROM users WHERE id = ?");
+        $stmt->bind_param("i", $_SESSION['user_id']);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $user = $result->fetch_assoc();
+        
+        if ($user && password_verify($current_password, $user['password'])) {
+            // Update password
+            $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
+            $stmt = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");
+            $stmt->bind_param("si", $hashed_password, $_SESSION['user_id']);
+            
+            if ($stmt->execute()) {
+                $success = "Password updated successfully";
+                Logger::log("User {$_SESSION['username']} changed their password", "INFO");
+            } else {
+                $error = "Error updating password";
+                Logger::log("Failed to update password for user {$_SESSION['username']}", "ERROR");
+            }
+        } else {
+            $error = "Current password is incorrect";
+            Logger::log("Failed password change attempt for user {$_SESSION['username']}", "WARNING");
+        }
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -57,18 +103,16 @@ if (!isset($_SESSION['user_id'])) {
             <p class="subtitle">Update your password to keep your account secure</p>
         </div>
         
-        <?php if (isset($_SESSION['password_message'])): ?>
-            <div class="alert <?php echo strpos($_SESSION['password_message'], '✅') !== false ? 'success' : 'error'; ?>">
-                <?php 
-                    echo $_SESSION['password_message'];
-                    unset($_SESSION['password_message']);
-                ?>
-            </div>
+        <?php if ($error): ?>
+            <div class="alert error"><?php echo htmlspecialchars($error); ?></div>
+        <?php endif; ?>
+        <?php if ($success): ?>
+            <div class="alert success"><?php echo htmlspecialchars($success); ?></div>
         <?php endif; ?>
 
         <div class="password-change-layout">
             <div class="password-form-section">
-                <form action="process_change_password.php" method="POST" class="password-form">
+                <form action="" method="POST" class="password-form">
                     <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
                     
                     <div class="form-row">

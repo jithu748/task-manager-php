@@ -211,9 +211,8 @@ try {
         <ul>
             <?php if (count($tasks) === 0): ?>
                 <li style="color: gray;">No tasks yet. Add your first task!</li>
-            <?php endif; ?>
-
-            <?php foreach ($tasks as $task): ?>            <li class="<?php echo $task['is_done'] ? 'done' : ''; ?> <?php echo (!empty($task['due_date']) && strtotime($task['due_date']) < time()) ? 'overdue' : ''; ?>">
+            <?php endif; ?>            <?php foreach ($tasks as $task): ?>
+                <li class="task-item <?php echo $task['is_done'] ? 'done' : ''; ?> <?php echo (!empty($task['due_date']) && strtotime($task['due_date']) < time()) ? 'overdue' : ''; ?>">
                     <div class="task-content">
                         <!-- Done checkbox -->
                         <form action="toggle_task.php" method="POST" class="toggle-form">
@@ -223,41 +222,62 @@ try {
                         </form>
 
                         <div class="task-details">
-                            <!-- Task text -->
-                            <span class="task-text">
-                                <?php echo htmlspecialchars($task['task']); ?>
-                            </span>
-
-                            <div class="task-meta">
-                                <!-- Category badge -->
-                                <span class="category-tag">
-                                    <?php echo $VALID_CATEGORIES[$task['category']] ?? $VALID_CATEGORIES['General']; ?> 
-                                    <?php echo htmlspecialchars($task['category']); ?>
-                                </span>
-
-                                <!-- Due date -->
-                                <?php if (!empty($task['due_date'])): 
-                                    $due = strtotime($task['due_date']);
-                                    $now = time();
-                                    $is_overdue = $due < $now;
-                                    $is_soon = ($due - $now) < 24 * 3600; // 24 hours
-                                ?>
-                                    <span class="due-label <?php echo $is_overdue ? 'overdue' : ($is_soon ? 'due-soon' : ''); ?>">
-                                        <?php if ($is_overdue): ?>
-                                            <i class="fas fa-exclamation-triangle"></i> Overdue:
-                                        <?php elseif ($is_soon): ?>
-                                            <i class="fas fa-clock"></i> Due soon:
-                                        <?php else: ?>
-                                            <i class="fas fa-calendar"></i> Due:
-                                        <?php endif; ?>
-                                        <?php echo date('M j, Y g:i A', $due); ?>
+                            <!-- Task display view -->
+                            <div class="task-view">
+                                <span class="task-text"><?php echo htmlspecialchars($task['task']); ?></span>
+                                <div class="task-meta">
+                                    <span class="category-tag">
+                                        <?php echo $VALID_CATEGORIES[$task['category']] ?? $VALID_CATEGORIES['General']; ?> 
+                                        <?php echo htmlspecialchars($task['category']); ?>
                                     </span>
-                                <?php endif; ?>
+
+                                    <!-- Due date -->
+                                    <?php if (!empty($task['due_date'])): 
+                                        $due = strtotime($task['due_date']);
+                                        $now = time();
+                                        $is_overdue = $due < $now;
+                                        $is_soon = ($due - $now) < 24 * 3600; // 24 hours
+                                    ?>
+                                        <span class="due-label <?php echo $is_overdue ? 'overdue' : ($is_soon ? 'due-soon' : ''); ?>" data-due-date="<?php echo date('Y-m-d\TH:i', $due); ?>">
+                                            <?php if ($is_overdue): ?>
+                                                <i class="fas fa-exclamation-triangle"></i> Overdue:
+                                            <?php elseif ($is_soon): ?>
+                                                <i class="fas fa-clock"></i> Due soon:
+                                            <?php else: ?>
+                                                <i class="fas fa-calendar"></i> Due:
+                                            <?php endif; ?>
+                                            <?php echo date('M j, Y g:i A', $due); ?>
+                                        </span>
+                                    <?php endif; ?>
+                                </div>
+
+                                <!-- Edit form -->
+                                <div class="task-edit" style="display: none;">
+                                    <form action="edit_task.php" method="POST" class="edit-form">
+                                        <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
+                                        <input type="hidden" name="id" value="<?php echo $task['id']; ?>">
+                                        <div class="edit-fields">
+                                            <input type="text" name="task" value="<?php echo htmlspecialchars($task['task']); ?>" required>
+                                            <select name="category">
+                                                <?php foreach ($VALID_CATEGORIES as $cat => $icon): ?>
+                                                    <option value="<?php echo htmlspecialchars($cat); ?>" <?php echo $cat === $task['category'] ? 'selected' : ''; ?>>
+                                                        <?php echo "$icon $cat"; ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                            <input type="datetime-local" name="due_date" value="<?php echo $task['due_date'] ? date('Y-m-d\TH:i', strtotime($task['due_date'])) : ''; ?>">
+                                        </div>
+                                        <div class="edit-buttons">
+                                            <button type="submit" class="save-btn" title="Save changes"><i class="fas fa-check"></i></button>
+                                            <button type="button" class="cancel-btn" onclick="toggleEditMode(this)" title="Cancel editing"><i class="fas fa-times"></i></button>
+                                        </div>
+                                    </form>
+                                </div>
                             </div>
                         </div>
 
                         <div class="task-actions">
-                            <button onclick="showEditForm(<?php echo $task['id']; ?>)" class="action-btn edit-btn" title="Edit task">
+                            <button onclick="toggleEditMode(this)" class="action-btn edit-btn" title="Edit task">
                                 <i class="fas fa-edit"></i>
                             </button>
                             <form action="delete_task.php" method="POST" class="delete-form" onsubmit="return confirm('Are you sure you want to delete this task?');">
@@ -339,6 +359,39 @@ try {
             showToast('<?php echo addslashes($_SESSION['toast_message']); ?>');
             <?php unset($_SESSION['toast_message']); ?>
         <?php endif; ?>
+
+        // Task Edit Management
+        function toggleEditMode(element) {
+            const taskItem = element.closest('.task-item');
+            const taskView = taskItem.querySelector('.task-view');
+            const taskEdit = taskItem.querySelector('.task-edit');
+            const taskText = taskView.querySelector('.task-text');
+            const taskMeta = taskView.querySelector('.task-meta');
+
+            // Hide all other edit forms first
+            document.querySelectorAll('.task-edit').forEach(edit => {
+                if (edit !== taskEdit && edit.style.display === 'block') {
+                    edit.style.display = 'none';
+                    const view = edit.closest('.task-view');
+                    view.querySelector('.task-text').style.display = 'inline';
+                    view.querySelector('.task-meta').style.display = 'block';
+                }
+            });
+
+            // Toggle current edit form
+            const isEditing = taskEdit.style.display === 'block';
+            
+            if (!isEditing) {
+                taskEdit.style.display = 'block';
+                taskText.style.display = 'none';
+                taskMeta.style.display = 'none';
+                taskEdit.querySelector('input[name="task"]').focus();
+            } else {
+                taskEdit.style.display = 'none';
+                taskText.style.display = 'inline';
+                taskMeta.style.display = 'block';
+            }
+        }
     </script>
 </body>
 </html>

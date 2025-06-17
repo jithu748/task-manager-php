@@ -1,14 +1,19 @@
 <?php
 class Logger {
     private static $log_file = 'logs/app.log';
-    
-    public static function init() {
+      public static function init() {
         $log_dir = __DIR__ . '/../logs';
         if (!file_exists($log_dir)) {
             mkdir($log_dir, 0755, true);
         }
         
         self::$log_file = $log_dir . '/app.log';
+        
+        // Create log file if it doesn't exist
+        if (!file_exists(self::$log_file)) {
+            touch(self::$log_file);
+            chmod(self::$log_file, 0644);
+        }
     }
     
     public static function log($message, $level = 'INFO') {
